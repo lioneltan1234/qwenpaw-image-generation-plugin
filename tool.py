@@ -20,7 +20,16 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_SIZE = "2K"
 DEFAULT_N = 1
 DEFAULT_OUTPUT_DIR = Path.home() / "Pictures" / "QwenPaw_Generated"
+ALLOWED_REF_IMAGE_DIR = Path.home() / "Pictures"  # Only allow ref images from ~/Pictures
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+MAX_B64_LENGTH = MAX_FILE_SIZE * 4 // 3 + 1024  # base64 ceiling for decode safety
+
+
+def _error(msg: str) -> ToolResponse:
+    """Shorthand to create an error ToolResponse."""
+    return ToolResponse(
+        content=[TextBlock(type="text", text=msg)],
+    )
 
 
 def _get_tool_config() -> dict:
@@ -390,30 +399,19 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
     expanded = os.path.expanduser(file_path)
     resolved = os.path.realpath(expanded)
 
-    # Security: reject path traversal
-    if ".." in os.path.normpath(file_path):
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Path traversal not allowed: {file_path}",
-                ),
-            ],
-        )
-
-    # Security: reject absolute system paths outside home directory
-    home_dir = os.path.realpath(os.path.expanduser("~"))
-    if not resolved.startswith(home_dir + os.sep) and resolved != home_dir:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text="Error: Only files within the home directory are allowed.",
-                ),
-            ],
+    # Security: limit to ~/Pictures/ and its subdirectories
+    try:
+        Path(resolved).relative_to(ALLOWED_REF_IMAGE_DIR)
+    except ValueError:
+        return _error(
+            f"Error: Reference images must be under {ALLOWED_REF_IMAGE_DIR}."
         )
 
     path = Path(resolved)
+
+    # Reject directories
+    if not path.is_file():
+        return _error(f"Error: Not a file: {file_path}")
     if not path.exists():
         return ToolResponse(
             content=[
@@ -591,14 +589,21 @@ def _save_b64_image(b64_data: str, index: int) -> Optional[str]:
         Path to saved file, or None on error
     """
     try:
+        # Security: reject oversized base64 before decoding
+        if len(b64_data) > MAX_B64_LENGTH:
+            logger.error(f"Base64 too large: {len(b64_data)} chars")
+            return None
+
         # Directly decode - b64_data is a plain base64 string, not JSON
         image_data = base64.b64decode(b64_data)
+
+        # Detect image format from magic bytes
+        ext = _detect_image_format(image_data)
 
         output_dir = DEFAULT_OUTPUT_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # UUID-based filename to avoid collisions
-        filename = f"generated_image_{uuid.uuid4().hex[:8]}_{index}.png"
+        filename = f"generated_image_{uuid.uuid4().hex[:8]}_{index}.{ext}"
         output_path = output_dir / filename
 
         with open(output_path, "wb") as f:
@@ -608,3 +613,27 @@ def _save_b64_image(b64_data: str, index: int) -> Optional[str]:
     except Exception as e:
         logger.exception(f"Failed to save base64 image: {e}")
         return None
+
+
+def _detect_image_format(data: bytes) -> str:
+    """Detect image format from magic bytes.
+
+    Args:
+        data: Raw image bytes
+
+    Returns:
+        File extension (without dot), e.g. 'png', 'jpeg'
+    """
+    if len(data) < 4:
+        return "png"
+    if data[:4] == b"\x89PNG":
+        return "png"
+    if data[:2] == b"\xff\xd8":
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data[:2] == b"BM":
+        return "bmp"
+    if data[:4] == b"GIF8":
+        return "gif"
+    return "png"
