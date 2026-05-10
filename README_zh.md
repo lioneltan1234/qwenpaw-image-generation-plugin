@@ -14,9 +14,9 @@
 
 - 🎨 **文生图** — 用文字描述生成高质量图片
 - 🖼️ **参考图生成** — 支持上传 1-14 张参考图进行风格/内容迁移
-- 📐 **多种分辨率** — 支持 2K 和 3K 分辨率输出（部分模型）
+- 📐 **多种分辨率** — 支持任意分辨率（如 `1024x1024`、`2K`、`3K` 等，取决于后端模型）
 - 🔍 **联网搜索** — 部分模型支持联网搜索增强（需工具调用时开启）
-- 🖌️ **多种风格** — `auto` / `realistic` / `anime` / `artistic`（部分模型）
+- 🖌️ **多种风格** — 支持模型特定风格（如 `vivid`、`natural`、`realistic` 等），`auto` 表示不指定
 
 ## 安装
 
@@ -54,7 +54,7 @@ qwenpaw plugin install ./qwenpaw-image-generation-plugin
    - **API Key**: API Key（必填）
    - **Base URL**: API Base URL（必填）
    - **模型名称**: 模型 ID（必填）
-   - **默认分辨率**: `2K` 或 `3K`（可选）
+   - **默认分辨率**: `2K`、`3K`、`1024x1024`、`1792x1024`、`512x512` 等（可选，取决于模型）
    - **请求超时**: 超时秒数（可选，默认 60）
 5. **启用**工具
 
@@ -71,9 +71,9 @@ qwenpaw plugin install ./qwenpaw-image-generation-plugin
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `prompt` | str | 必填 | 图片描述，越详细越好 |
-| `size` | str | `"2K"` | 分辨率：`"2K"` 或 `"3K"` |
+| `size` | str | `"2K"` | 分辨率：任意字符串（如 `1024x1024`、`1792x1024`、`2K`、`3K`） |
 | `n` | int | `1` | 生成数量（1-4） |
-| `style` | str | `"auto"` | 风格：`auto` / `realistic` / `anime` / `artistic` |
+| `style` | str | `"auto"` | 风格：模型特定值（如 `vivid`、`natural`、`realistic`），`auto` 表示不发送 |
 | `image` | str/List | None | 参考图（本地路径、URL 或 base64） |
 | `web_search` | bool | `False` | 是否启用联网搜索增强（部分模型支持） |
 

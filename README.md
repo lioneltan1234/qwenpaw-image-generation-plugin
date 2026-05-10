@@ -14,9 +14,9 @@ A multi-model image generation tool plugin for [QwenPaw](https://github.com/agen
 
 - 🎨 **Text-to-Image** — Generate high-quality images from text descriptions
 - 🖼️ **Reference Image Generation** — Support 1-14 reference images for style/content transfer
-- 📐 **Multiple Resolutions** — Support 2K and 3K resolution output (model-dependent)
+- 📐 **Multiple Resolutions** — Support any resolution string (e.g. `1024x1024`, `2K`, `3K`, model-dependent)
 - 🔍 **Web Search** — Some models support web search enhancement (enable via tool call)
-- 🖌️ **Multiple Styles** — `auto` / `realistic` / `anime` / `artistic` (model-dependent)
+- 🖌️ **Multiple Styles** — Pass through any model-specific style (e.g. `vivid`, `natural`, `realistic`), `auto` means no style sent
 
 ## Installation
 
@@ -54,7 +54,7 @@ Obtain from your service provider:
    - **API Key**: API Key (required)
    - **Base URL**: API Base URL (required)
    - **Model Name**: Model ID (required)
-   - **Default Size**: `2K` or `3K` (optional)
+   - **Default Size**: `2K`, `3K`, `1024x1024`, `1792x1024`, `512x512`, etc. (optional, model-dependent)
    - **Timeout**: Timeout in seconds (optional, default 60)
 5. **Enable** the tool
 
@@ -71,9 +71,9 @@ Generate an image: Shanghai Bund at sunset, golden light, vintage film style
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `prompt` | str | required | Image description, the more detailed the better |
-| `size` | str | `"2K"` | Resolution: `"2K"` or `"3K"` |
+| `size` | str | `"2K"` | Resolution: any string (e.g. `1024x1024`, `1792x1024`, `2K`, `3K`) |
 | `n` | int | `1` | Number of images to generate (1-4) |
-| `style` | str | `"auto"` | Style: `auto` / `realistic` / `anime` / `artistic` |
+| `style` | str | `"auto"` | Style: model-specific value (e.g. `vivid`, `natural`, `realistic`), `auto` means not sent |
 | `image` | str/List | None | Reference image(s) (local path, URL, or base64) |
 | `web_search` | bool | `False` | Enable web search enhancement (some models only) |
 
