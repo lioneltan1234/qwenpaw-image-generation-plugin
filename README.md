@@ -20,10 +20,10 @@ A multi-model image generation tool plugin for [QwenPaw](https://github.com/agen
 
 ## Installation
 
-### Option 1: Install from GitHub (Recommended)
+### Option 1: GitHub Zipball (Recommended)
 
 ```bash
-qwenpaw plugin install https://github.com/lioneltan1234/qwenpaw-image-generation-plugin
+qwenpaw plugin install https://github.com/lioneltan1234/qwenpaw-image-generation-plugin/archive/refs/heads/main.zip
 ```
 
 ### Option 2: Local Installation

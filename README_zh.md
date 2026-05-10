@@ -20,10 +20,10 @@
 
 ## 安装
 
-### 方式一：从 GitHub 安装（推荐）
+### 方式一：GitHub Zipball（推荐）
 
 ```bash
-qwenpaw plugin install https://github.com/lioneltan1234/qwenpaw-image-generation-plugin
+qwenpaw plugin install https://github.com/lioneltan1234/qwenpaw-image-generation-plugin/archive/refs/heads/main.zip
 ```
 
 ### 方式二：本地安装
