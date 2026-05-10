@@ -1,8 +1,8 @@
 {
-  "id": "doubao-seedream-tool",
-  "name": "Doubao Seedream Tool",
+  "id": "image-generation-tool",
+  "name": "Image Generation Tool",
   "version": "1.0.0",
-  "description": "Generate images using Doubao Seedream-5.0-lite via Volcano Engine Ark API (or any OpenAI-compatible image generation API)",
+  "description": "QwenPaw tool plugin for image generation via any OpenAI-compatible API (supports Doubao Seedream, GPT Image, Flux, Stable Diffusion, and more)",
   "author": "Lionel Tan",
   "entry": {
     "backend": "plugin.py"
@@ -10,8 +10,8 @@
   "dependencies": ["httpx>=0.24.0"],
   "min_version": "1.1.6",
   "meta": {
-    "tool_name": "generate_image_doubao",
-    "tool_description": "使用火山引擎 Doubao Seedream-5.0-lite 生成图片，支持文生图和参考图生成（兼容任何 OpenAI 风格的图片生成 API）",
+    "tool_name": "generate_image",
+    "tool_description": "使用 OpenAI 兼容接口生成图片，支持 Doubao Seedream、GPT Image、Flux、Stable Diffusion 等模型",
     "tool_icon": "🎨",
     "requires_config": true,
     "config_fields": [
@@ -20,7 +20,7 @@
         "label": "API Key",
         "type": "password",
         "required": true,
-        "placeholder": "bearer-xxx or ark-xxx",
+        "placeholder": "bearer-xxx",
         "help": "API Key（必填）"
       },
       {
@@ -37,7 +37,7 @@
         "type": "text",
         "required": true,
         "placeholder": "doubao-seedream-5.0-lite",
-        "help": "模型名称（必填），如 doubao-seedream-5.0-lite"
+        "help": "模型名称（必填），如 doubao-seedream-5.0-lite、dall-e-3、flux-1 等"
       },
       {
         "name": "default_size",

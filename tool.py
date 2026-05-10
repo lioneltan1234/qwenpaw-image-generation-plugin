@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
-"""Doubao Seedream-5.0-lite image generation tool."""
+"""OpenAI-compatible image generation tool for QwenPaw."""
 import base64
 import logging
 import os
@@ -9,14 +9,13 @@ from typing import List, Optional, Union
 
 import httpx
 
-from agentscope.message import ImageBlock, TextBlock
+from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 from qwenpaw.constant import DEFAULT_MEDIA_DIR
 
 logger = logging.getLogger(__name__)
 
 # Default config values
-DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SIZE = "2K"
 DEFAULT_N = 1
@@ -33,7 +32,7 @@ def _get_tool_config() -> dict:
 
         registry = PluginRegistry()
         tool_config = registry.get_tool_config(
-            "generate_image_doubao",
+            "generate_image",
             "",
         )
         return tool_config if tool_config else {}
@@ -41,7 +40,7 @@ def _get_tool_config() -> dict:
         return {}
 
 
-async def generate_image_doubao(
+async def generate_image(
     prompt: str,
     size: str = DEFAULT_SIZE,
     n: int = DEFAULT_N,
@@ -49,7 +48,10 @@ async def generate_image_doubao(
     image: Optional[Union[str, List[str]]] = None,
     web_search: bool = False,
 ) -> ToolResponse:
-    """Generate images using Doubao Seedream-5.0-lite (or any OpenAI-compatible image generation API).
+    """Generate images using any OpenAI-compatible image generation API.
+
+    Supports Doubao Seedream, GPT Image, Flux, Stable Diffusion, and more.
+    Simply configure the corresponding model, API key, and base URL.
 
     Args:
         prompt:
@@ -58,28 +60,29 @@ async def generate_image_doubao(
         size:
             Output image resolution. Options: "2K", "3K".
             Defaults to "2K".
+            Note: Some models may not support this parameter.
         n:
             Number of images to generate (1-4).
             Defaults to 1.
         style:
             Image style. Options: "auto", "realistic", "anime", "artistic".
             Defaults to "auto".
+            Note: Some models may not support this parameter.
         image:
             Optional reference image(s) for image-to-image generation.
             Can be a local file path, URL, or base64 encoded image.
-            Supports single image or list of images (up to 14 reference images
-            for advanced features).
+            Supports single image or list of images (up to 14 reference images).
         web_search:
             Enable web search to enhance image generation with
-            real-time information. Only supported by
-            doubao-seedream-5.0-lite. Defaults to False.
+            real-time information. Only supported by some models
+            (e.g. doubao-seedream-5.0-lite). Defaults to False.
 
     Returns:
         ToolResponse:
             Contains the generated image(s) and metadata.
 
     Example:
-        >>> result = await generate_image_doubao(
+        >>> result = await generate_image(
         ...     prompt="一只在咖啡馆窗边看雨的橘猫",
         ...     size="2K",
         ...     n=1,
@@ -109,7 +112,7 @@ async def generate_image_doubao(
                     type="text",
                     text=(
                         "Error: API key not configured. "
-                        "Please set your Doubao API key in the tool settings."
+                        "Please set your API key in the tool settings."
                     ),
                 ),
             ],
@@ -123,7 +126,7 @@ async def generate_image_doubao(
                     type="text",
                     text=(
                         "Error: Base URL not configured. "
-                        "Please set your Doubao Base URL in the tool settings."
+                        "Please set your Base URL in the tool settings."
                     ),
                 ),
             ],
@@ -217,7 +220,7 @@ async def generate_image_doubao(
             return processed_images
         payload["image"] = processed_images
 
-    # Add web_search for 5.0-lite
+    # Add web_search for supported models
     if web_search:
         payload["web_search"] = True
 
@@ -274,7 +277,7 @@ async def generate_image_doubao(
         )
 
     # Parse response
-    return _parse_response(data, n)
+    return _parse_response(data, size)
 
 
 def _process_reference_images(
@@ -293,7 +296,7 @@ def _process_reference_images(
     else:
         images = list(image)
 
-    # Limit to 14 reference images (Doubao Seedream limit)
+    # Limit to 14 reference images
     if len(images) > 14:
         return ToolResponse(
             content=[
@@ -385,12 +388,12 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
         )
 
 
-def _parse_response(data: dict, n: int) -> ToolResponse:
+def _parse_response(data: dict, requested_size: str) -> ToolResponse:
     """Parse API response and build ToolResponse.
 
     Args:
         data: API response JSON
-        n: Number of images requested
+        requested_size: The size that was requested
 
     Returns:
         ToolResponse with image blocks and text
@@ -424,9 +427,10 @@ def _parse_response(data: dict, n: int) -> ToolResponse:
         url = item.get("url", "")
         b64_json = item.get("b64_json", "")
         revised_prompt = item.get("revised_prompt", "")
+        item_size = item.get("size", requested_size)
 
         if url:
-            result_text += f"**第 {i} 张** ({item.get('size', size)}):\n"
+            result_text += f"**第 {i} 张** ({item_size}):\n"
             result_text += f"🔗 {url}\n\n"
         elif b64_json:
             # Save base64 as file
@@ -435,7 +439,7 @@ def _parse_response(data: dict, n: int) -> ToolResponse:
                 result_text += f"**第 {i} 张**:\n"
                 result_text += f"💾 {saved_path}\n\n"
 
-        if revised_prompt and revised_prompt != prompt:
+        if revised_prompt and revised_prompt != item.get("prompt"):
             result_text += f"_优化提示词: {revised_prompt}\n\n"
 
     # Add usage info if available
@@ -468,7 +472,7 @@ def _save_b64_image(b64_json: str, index: int) -> Optional[str]:
         output_dir = Path(DEFAULT_MEDIA_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"doubao_seedream_{index}.png"
+        filename = f"generated_image_{index}.png"
         output_path = output_dir / filename
 
         with open(output_path, "wb") as f:
