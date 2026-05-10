@@ -8,7 +8,6 @@
 |------|-------------|------------|
 | Doubao Seedream | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seedream-5.0-lite` |
 | GPT Image | `https://api.openai.com/v1` | `dall-e-3` |
-| yibuapi 中转 | `https://yibuapi.com/v1` | `doubao-seedream-5.0-lite` |
 | 其他兼容 API | 自定义 | 自定义 |
 
 ## 功能特性
