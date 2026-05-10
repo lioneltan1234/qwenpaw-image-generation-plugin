@@ -100,3 +100,6 @@ class ImageGenerationToolPlugin:
 
         except Exception as e:
             logger.error(f"Failed to register Image Generation tool: {e}")
+
+# Export plugin instance
+plugin = ImageGenerationToolPlugin()
