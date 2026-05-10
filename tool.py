@@ -116,9 +116,19 @@ async def generate_image_doubao(
             ],
         )
 
-    base_url = tool_config.get("base_url", DEFAULT_BASE_URL).strip()
+    base_url = tool_config.get("base_url", "").strip()
     if not base_url:
-        base_url = DEFAULT_BASE_URL
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "Error: Base URL not configured. "
+                        "Please set your Doubao Base URL in the tool settings."
+                    ),
+                ),
+            ],
+        )
 
     timeout = tool_config.get("timeout", DEFAULT_TIMEOUT)
     if timeout is None or timeout <= 0:
