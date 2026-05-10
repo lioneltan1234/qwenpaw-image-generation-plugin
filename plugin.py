@@ -44,6 +44,9 @@ class ImageGenerationToolPlugin:
                 "image_generation_tool",
                 tool_path,
             )
+            if spec is None or spec.loader is None:
+                logger.error(f"Cannot load tool module from {tool_path}")
+                return
             tool_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(tool_module)
             generate_image = tool_module.generate_image
@@ -52,8 +55,9 @@ class ImageGenerationToolPlugin:
             import qwenpaw.agents.tools as tools_module
 
             setattr(tools_module, "generate_image", generate_image)
-            if "generate_image" not in tools_module.__all__:
-                tools_module.__all__.append("generate_image")
+            _all = getattr(tools_module, "__all__", None)
+            if _all is not None and "generate_image" not in _all:
+                _all.append("generate_image")
             logger.info("✓ Registered tool function: generate_image")
 
             # Add tool to current agent's config

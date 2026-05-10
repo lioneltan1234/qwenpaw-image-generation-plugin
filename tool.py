@@ -20,7 +20,7 @@ DEFAULT_TIMEOUT = 60.0
 DEFAULT_SIZE = "2K"
 DEFAULT_N = 1
 DEFAULT_OUTPUT_DIR = Path.home() / "Pictures" / "QwenPaw_Generated"
-ALLOWED_REF_IMAGE_DIR = Path.home() / "Pictures"  # Only allow ref images from ~/Pictures
+ALLOWED_REF_IMAGE_DIR = Path(os.path.realpath(Path.home() / "Pictures"))  # Only allow ref images from ~/Pictures
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 MAX_B64_LENGTH = MAX_FILE_SIZE * 4 // 3 + 1024  # base64 ceiling for decode safety
 
@@ -50,6 +50,7 @@ def _get_tool_config() -> dict:
         )
         return tool_config if tool_config else {}
     except Exception:
+        logger.debug("Failed to load tool config from registry", exc_info=True)
         return {}
 
 
@@ -71,16 +72,16 @@ async def generate_image(
             Text description of the image to generate.
             Be specific and detailed for best results.
         size:
-            Output image resolution. Options: "2K", "3K".
+            Output image resolution (e.g. "2K", "3K", "1024x1024").
             Defaults to "2K".
-            Note: Some models may not support this parameter.
+            Note: Supported values depend on the backend model.
         n:
             Number of images to generate (1-4).
             Defaults to 1.
         style:
-            Image style. Options: "auto", "realistic", "anime", "artistic".
-            Defaults to "auto".
-            Note: Some models may not support this parameter.
+            Image style (e.g. "auto", "realistic", "vivid", "natural").
+            Defaults to "auto" (no style sent).
+            Note: Supported values depend on the backend model.
         image:
             Optional reference image(s) for image-to-image generation.
             Can be a local file path, URL, or base64 encoded image.
@@ -105,71 +106,39 @@ async def generate_image(
     # Get tool config
     tool_config = _get_tool_config()
     if not tool_config:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: Tool not configured. "
-                        "Please set your API key in the tool settings."
-                    ),
-                ),
-            ],
+        return _error(
+            "Error: Tool not configured. "
+            "Please set your API key in the tool settings."
         )
 
-    api_key = tool_config.get("api_key")
+    api_key = (tool_config.get("api_key") or "").strip()
     if not api_key:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: API key not configured. "
-                        "Please set your API key in the tool settings."
-                    ),
-                ),
-            ],
+        return _error(
+            "Error: API key not configured. "
+            "Please set your API key in the tool settings."
         )
 
-    base_url = tool_config.get("base_url", "").strip()
+    base_url = (tool_config.get("base_url") or "").strip()
     if not base_url:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: Base URL not configured. "
-                        "Please set your Base URL in the tool settings."
-                    ),
-                ),
-            ],
+        return _error(
+            "Error: Base URL not configured. "
+            "Please set your Base URL in the tool settings."
         )
 
-    # Security: enforce HTTPS
-    if not base_url.startswith("https://"):
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: Base URL must use HTTPS to protect your API key."
-                    ),
-                ),
-            ],
+    # Security: enforce HTTPS (allow localhost for development)
+    if not base_url.startswith("https://") and not base_url.startswith(
+        ("http://localhost", "http://127.0.0.1")
+    ):
+        return _error(
+            "Error: Base URL must use HTTPS to protect your API key. "
+            "Local development URLs (localhost / 127.0.0.1) are allowed."
         )
 
-    model = tool_config.get("model", "").strip()
+    model = (tool_config.get("model") or "").strip()
     if not model:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: Model not configured. "
-                        "Please set your model name in the tool settings."
-                    ),
-                ),
-            ],
+        return _error(
+            "Error: Model not configured. "
+            "Please set your model name in the tool settings."
         )
 
     # Fix: convert timeout BEFORE any comparison to avoid TypeError
@@ -181,66 +150,23 @@ async def generate_image(
         timeout = DEFAULT_TIMEOUT
 
     # Validate parameters
-    valid_sizes = {"2K", "3K"}
-    if size not in valid_sizes:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        f"Error: Invalid size '{size}'. "
-                        f"Must be one of: {', '.join(valid_sizes)}"
-                    ),
-                ),
-            ],
-        )
+    if not size or not str(size).strip():
+        size = DEFAULT_SIZE
 
-    valid_styles = {"auto", "realistic", "anime", "artistic"}
-    if style not in valid_styles:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        f"Error: Invalid style '{style}'. "
-                        f"Must be one of: {', '.join(valid_styles)}"
-                    ),
-                ),
-            ],
-        )
+    # Normalize style: pass through unless empty or "auto"
+    style = (style or "").strip().lower()
 
     # Fix: validate n type before comparison
     try:
         n = int(n)
     except (ValueError, TypeError):
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Invalid n value '{n}'. Must be an integer.",
-                ),
-            ],
-        )
+        return _error(f"Error: Invalid n value '{n}'. Must be an integer.")
     if n < 1 or n > 4:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text="Error: n must be between 1 and 4.",
-                ),
-            ],
-        )
+        return _error("Error: n must be between 1 and 4.")
 
     stripped_prompt = prompt.strip()
     if not stripped_prompt:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text="Error: prompt cannot be empty.",
-                ),
-            ],
-        )
+        return _error("Error: prompt cannot be empty.")
 
     # Build endpoint URL
     endpoint = f"{base_url.rstrip('/')}/images/generations"
@@ -252,8 +178,8 @@ async def generate_image(
         "size": size,
         "n": n,
     }
-    # Only include style for Doubao Seedream models
-    if "seedream" in model.lower():
+    # Include style if explicitly specified (model-dependent)
+    if style and style != "auto":
         payload["style"] = style
 
     # Handle reference images
@@ -285,14 +211,7 @@ async def generate_image(
             response.raise_for_status()
             data = response.json()
     except httpx.TimeoutException:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Request timed out after {timeout}s.",
-                ),
-            ],
-        )
+        return _error(f"Error: Request timed out after {timeout}s.")
     except httpx.HTTPStatusError as e:
         error_detail = ""
         try:
@@ -303,23 +222,10 @@ async def generate_image(
             )
         except Exception:
             error_detail = str(e)
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: API request failed: {error_detail}",
-                ),
-            ],
-        )
+        return _error(f"Error: API request failed: {error_detail}")
     except Exception as e:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Unexpected error: {str(e)}",
-                ),
-            ],
-        )
+        logger.exception("Unexpected error during image generation")
+        return _error(f"Error: Unexpected error: {str(e)}")
 
     # Parse response
     return _parse_response(data, size, stripped_prompt)
@@ -343,14 +249,7 @@ def _process_reference_images(
 
     # Limit to 14 reference images
     if len(images) > 14:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text="Error: Maximum 14 reference images supported.",
-                ),
-            ],
-        )
+        return _error("Error: Maximum 14 reference images supported.")
 
     processed = []
     for img in images:
@@ -362,16 +261,8 @@ def _process_reference_images(
         if img.startswith("https://"):
             processed.append(img)
         elif img.startswith("http://"):
-            return ToolResponse(
-                content=[
-                    TextBlock(
-                        type="text",
-                        text=(
-                            "Error: Reference image URL must use HTTPS: "
-                            f"{img[:50]}..."
-                        ),
-                    ),
-                ],
+            return _error(
+                f"Error: Reference image URL must use HTTPS: {img[:50]}..."
             )
         # Base64 - pass through as-is
         elif img.startswith("data:image/"):
@@ -410,31 +301,17 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
     path = Path(resolved)
 
     # Reject directories
+    if not path.exists():
+        return _error(f"Error: File not found: {file_path}")
     if not path.is_file():
         return _error(f"Error: Not a file: {file_path}")
-    if not path.exists():
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: File not found: {file_path}",
-                ),
-            ],
-        )
 
     # Validate file extension
     valid_extensions = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
     if path.suffix.lower() not in valid_extensions:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        f"Error: Unsupported image format: {path.suffix}. "
-                        f"Supported: {', '.join(valid_extensions)}"
-                    ),
-                ),
-            ],
+        return _error(
+            f"Error: Unsupported image format: {path.suffix}. "
+            f"Supported: {', '.join(valid_extensions)}"
         )
 
     try:
@@ -459,30 +336,15 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
                 chunks.append(chunk)
                 total_read += len(chunk)
                 if total_read > MAX_FILE_SIZE:
-                    return ToolResponse(
-                        content=[
-                            TextBlock(
-                                type="text",
-                                text=(
-                                    "Error: File too large "
-                                    f"(>{MAX_FILE_SIZE / 1024 / 1024:.0f}MB)."
-                                ),
-                            ),
-                        ],
+                    return _error(
+                        f"Error: File too large (>{MAX_FILE_SIZE / 1024 / 1024:.0f}MB)."
                     )
             encoded = base64.b64encode(b"".join(chunks)).decode("utf-8")
 
         return f"data:{mime_type};base64,{encoded}"
     except OSError as e:
         logger.exception(f"Failed to read image file {file_path}: {e}")
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Failed to read image file: {str(e)}",
-                ),
-            ],
-        )
+        return _error(f"Error: Failed to read image file: {str(e)}")
 
 
 def _parse_response(
@@ -509,31 +371,18 @@ def _parse_response(
             "message",
             data.get("message", "Unknown error"),
         )
-        return ToolResponse(
-            content=[TextBlock(type="text", text=f"Error: {error_msg}")],
-        )
+        return _error(f"Error: {error_msg}")
 
     image_list = data["data"]
     # Fix: validate image_list is actually a list
     if not isinstance(image_list, list):
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "Error: Unexpected API response format. "
-                        f"Expected a list, got {type(image_list).__name__}."
-                    ),
-                ),
-            ],
+        return _error(
+            "Error: Unexpected API response format. "
+            f"Expected a list, got {type(image_list).__name__}."
         )
 
     if not image_list:
-        return ToolResponse(
-            content=[
-                TextBlock(type="text", text="Error: No images returned."),
-            ],
-        )
+        return _error("Error: No images returned.")
 
     image_count = len(image_list)
 
