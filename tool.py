@@ -12,7 +12,6 @@ import httpx
 
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
-from qwenpaw.constant import DEFAULT_MEDIA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -164,14 +163,13 @@ async def generate_image(
             ],
         )
 
-    timeout = tool_config.get("timeout", DEFAULT_TIMEOUT)
-    if timeout is None or timeout <= 0:
+    # Fix: convert timeout BEFORE any comparison to avoid TypeError
+    try:
+        timeout = float(tool_config.get("timeout", DEFAULT_TIMEOUT))
+    except (ValueError, TypeError):
         timeout = DEFAULT_TIMEOUT
-    else:
-        try:
-            timeout = float(timeout)
-        except (ValueError, TypeError):
-            timeout = DEFAULT_TIMEOUT
+    if timeout <= 0:
+        timeout = DEFAULT_TIMEOUT
 
     # Validate parameters
     valid_sizes = {"2K", "3K"}
@@ -202,6 +200,18 @@ async def generate_image(
             ],
         )
 
+    # Fix: validate n type before comparison
+    try:
+        n = int(n)
+    except (ValueError, TypeError):
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Invalid n value '{n}'. Must be an integer.",
+                ),
+            ],
+        )
     if n < 1 or n > 4:
         return ToolResponse(
             content=[
@@ -212,7 +222,8 @@ async def generate_image(
             ],
         )
 
-    if not prompt or not prompt.strip():
+    stripped_prompt = prompt.strip()
+    if not stripped_prompt:
         return ToolResponse(
             content=[
                 TextBlock(
@@ -228,18 +239,22 @@ async def generate_image(
     # Build request payload
     payload: dict = {
         "model": model,
-        "prompt": prompt.strip(),
+        "prompt": stripped_prompt,
         "size": size,
         "n": n,
-        "style": style,
     }
+    # Only include style for Doubao Seedream models
+    if "seedream" in model.lower():
+        payload["style"] = style
 
     # Handle reference images
     if image:
         processed_images = _process_reference_images(image)
         if isinstance(processed_images, ToolResponse):
             return processed_images
-        payload["image"] = processed_images
+        # Fix: don't send empty array to API
+        if processed_images:
+            payload["image"] = processed_images
 
     # Add web_search for supported models
     if web_search:
@@ -297,8 +312,8 @@ async def generate_image(
             ],
         )
 
-    # Parse response (pass original prompt for revised_prompt comparison)
-    return _parse_response(data, size, prompt.strip())
+    # Parse response
+    return _parse_response(data, size, stripped_prompt)
 
 
 def _process_reference_images(
@@ -334,9 +349,21 @@ def _process_reference_images(
         if not img:
             continue
 
-        # URL - pass through as-is
-        if img.startswith(("http://", "https://")):
+        # URL - pass through as-is (https only for security)
+        if img.startswith("https://"):
             processed.append(img)
+        elif img.startswith("http://"):
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=(
+                            "Error: Reference image URL must use HTTPS: "
+                            f"{img[:50]}..."
+                        ),
+                    ),
+                ],
+            )
         # Base64 - pass through as-is
         elif img.startswith("data:image/"):
             processed.append(img)
@@ -359,50 +386,40 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
     Returns:
         Base64 data URL string, or ToolResponse on error
     """
-    # Security: reject path traversal attempts
-    normalized = os.path.normpath(file_path)
-    if ".." in normalized:
+    # Security: expand user then resolve to absolute path
+    expanded = os.path.expanduser(file_path)
+    resolved = os.path.realpath(expanded)
+
+    # Security: reject path traversal
+    if ".." in os.path.normpath(file_path):
         return ToolResponse(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: Invalid path traversal detected: {file_path}",
+                    text=f"Error: Path traversal not allowed: {file_path}",
                 ),
             ],
         )
 
-    path = Path(os.path.expanduser(file_path))
+    # Security: reject absolute system paths outside home directory
+    home_dir = os.path.realpath(os.path.expanduser("~"))
+    if not resolved.startswith(home_dir + os.sep) and resolved != home_dir:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: Only files within the home directory are allowed.",
+                ),
+            ],
+        )
+
+    path = Path(resolved)
     if not path.exists():
         return ToolResponse(
             content=[
                 TextBlock(
                     type="text",
                     text=f"Error: File not found: {file_path}",
-                ),
-            ],
-        )
-
-    # Security: enforce file size limit
-    try:
-        file_size = path.stat().st_size
-        if file_size > MAX_FILE_SIZE:
-            return ToolResponse(
-                content=[
-                    TextBlock(
-                        type="text",
-                        text=(
-                            f"Error: File too large ({file_size / 1024 / 1024:.1f}MB). "
-                            f"Maximum size is {MAX_FILE_SIZE / 1024 / 1024:.0f}MB."
-                        ),
-                    ),
-                ],
-            )
-    except OSError as e:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Cannot read file metadata: {str(e)}",
                 ),
             ],
         )
@@ -432,10 +449,33 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
             ".gif": "image/gif",
         }.get(path.suffix.lower(), "image/png")
 
+        # Fix TOCTOU: read first in chunks, then check size
         with open(path, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("utf-8")
+            # Read in chunks to avoid memory issues, capped at MAX_FILE_SIZE + 1
+            chunks = []
+            total_read = 0
+            while True:
+                chunk = f.read(8192)  # 8KB chunks
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total_read += len(chunk)
+                if total_read > MAX_FILE_SIZE:
+                    return ToolResponse(
+                        content=[
+                            TextBlock(
+                                type="text",
+                                text=(
+                                    "Error: File too large "
+                                    f"(>{MAX_FILE_SIZE / 1024 / 1024:.0f}MB)."
+                                ),
+                            ),
+                        ],
+                    )
+            encoded = base64.b64encode(b"".join(chunks)).decode("utf-8")
+
         return f"data:{mime_type};base64,{encoded}"
-    except Exception as e:
+    except OSError as e:
         logger.exception(f"Failed to read image file {file_path}: {e}")
         return ToolResponse(
             content=[
@@ -476,6 +516,20 @@ def _parse_response(
         )
 
     image_list = data["data"]
+    # Fix: validate image_list is actually a list
+    if not isinstance(image_list, list):
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "Error: Unexpected API response format. "
+                        f"Expected a list, got {type(image_list).__name__}."
+                    ),
+                ),
+            ],
+        )
+
     if not image_list:
         return ToolResponse(
             content=[
@@ -488,6 +542,11 @@ def _parse_response(
     # Build result text
     result_text = f"✅ 成功生成 {image_count} 张图片：\n\n"
     for i, item in enumerate(image_list, 1):
+        # Fix: ensure item is a dict before calling .get()
+        if not isinstance(item, dict):
+            result_text += f"_第 {i} 项: 非预期格式 ({type(item).__name__})_\n\n"
+            continue
+
         url = item.get("url", "")
         b64_data = item.get("b64_json", "")
         revised_prompt = item.get("revised_prompt", "")
@@ -502,6 +561,9 @@ def _parse_response(
             if saved_path:
                 result_text += f"**第 {i} 张**:\n"
                 result_text += f"💾 {saved_path}\n\n"
+        else:
+            # Fix: handle items with neither url nor b64_json
+            result_text += f"_第 {i} 项: 无可用图像数据_\n\n"
 
         # Only show revised_prompt if it differs from original
         if revised_prompt and revised_prompt != prompt:
