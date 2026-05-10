@@ -7,7 +7,7 @@
 | 模型 | Base URL 示例 | 模型名称示例 |
 |------|-------------|------------|
 | Doubao Seedream | `https://ark.cn-beijing.volces.com/api/plan/v3` | `doubao-seedream-5.0-lite` |
-| GPT Image | `https://api.openai.com/v1` | `dall-e-3` |
+| GPT Image 2 | `https://api.openai.com/v1` | `gpt-image-2` |
 | 其他兼容 API | 自定义 | 自定义 |
 
 ## 功能特性
