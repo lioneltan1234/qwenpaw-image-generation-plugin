@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 # Default config values
 DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"
-DEFAULT_MODEL = "doubao-seedream-5.0-lite"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SIZE = "2K"
 DEFAULT_N = 1
@@ -50,7 +49,7 @@ async def generate_image_doubao(
     image: Optional[Union[str, List[str]]] = None,
     web_search: bool = False,
 ) -> ToolResponse:
-    """Generate images using Doubao Seedream-5.0-lite model.
+    """Generate images using Doubao Seedream-5.0-lite (or any OpenAI-compatible image generation API).
 
     Args:
         prompt:
@@ -130,6 +129,20 @@ async def generate_image_doubao(
             ],
         )
 
+    model = tool_config.get("model", "").strip()
+    if not model:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "Error: Model not configured. "
+                        "Please set your model name in the tool settings."
+                    ),
+                ),
+            ],
+        )
+
     timeout = tool_config.get("timeout", DEFAULT_TIMEOUT)
     if timeout is None or timeout <= 0:
         timeout = DEFAULT_TIMEOUT
@@ -190,7 +203,7 @@ async def generate_image_doubao(
 
     # Build request payload
     payload: dict = {
-        "model": DEFAULT_MODEL,
+        "model": model,
         "prompt": prompt.strip(),
         "size": size,
         "n": n,

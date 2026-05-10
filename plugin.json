@@ -2,7 +2,7 @@
   "id": "doubao-seedream-tool",
   "name": "Doubao Seedream Tool",
   "version": "1.0.0",
-  "description": "Generate images using Doubao Seedream-5.0-lite via Volcano Engine Ark API",
+  "description": "Generate images using Doubao Seedream-5.0-lite via Volcano Engine Ark API (or any OpenAI-compatible image generation API)",
   "author": "Lionel Tan",
   "entry": {
     "backend": "plugin.py"
@@ -11,25 +11,33 @@
   "min_version": "1.1.6",
   "meta": {
     "tool_name": "generate_image_doubao",
-    "tool_description": "使用火山引擎 Doubao Seedream-5.0-lite 生成图片，支持文生图和参考图生成",
+    "tool_description": "使用火山引擎 Doubao Seedream-5.0-lite 生成图片，支持文生图和参考图生成（兼容任何 OpenAI 风格的图片生成 API）",
     "tool_icon": "🎨",
     "requires_config": true,
     "config_fields": [
       {
         "name": "api_key",
-        "label": "火山引擎 API Key",
+        "label": "API Key",
         "type": "password",
         "required": true,
         "placeholder": "bearer-xxx or ark-xxx",
-        "help": "从火山引擎控制台获取的 API Key"
+        "help": "API Key（必填）"
       },
       {
         "name": "base_url",
-        "label": "火山引擎 Base URL",
+        "label": "Base URL",
         "type": "text",
         "required": true,
         "placeholder": "https://ark.cn-beijing.volces.com/api/plan/v3",
-        "help": "从火山引擎控制台获取的 Base URL，必填"
+        "help": "API Base URL（必填）"
+      },
+      {
+        "name": "model",
+        "label": "模型名称",
+        "type": "text",
+        "required": true,
+        "placeholder": "doubao-seedream-5.0-lite",
+        "help": "模型名称（必填），如 doubao-seedream-5.0-lite"
       },
       {
         "name": "default_size",
