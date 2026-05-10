@@ -1,0 +1,56 @@
+{
+  "id": "doubao-seedream-tool",
+  "name": "Doubao Seedream Tool",
+  "version": "1.0.0",
+  "description": "Generate images using Doubao Seedream-5.0-lite via Volcano Engine Ark API",
+  "author": "Lionel Tan",
+  "entry": {
+    "backend": "plugin.py"
+  },
+  "dependencies": ["httpx>=0.24.0"],
+  "min_version": "1.1.6",
+  "meta": {
+    "tool_name": "generate_image_doubao",
+    "tool_description": "使用火山引擎 Doubao Seedream-5.0-lite 生成图片，支持文生图和参考图生成",
+    "tool_icon": "🎨",
+    "requires_config": true,
+    "config_fields": [
+      {
+        "name": "api_key",
+        "label": "火山引擎 API Key",
+        "type": "password",
+        "required": true,
+        "placeholder": "bearer-xxx or ark-xxx",
+        "help": "从火山引擎控制台获取的 API Key"
+      },
+      {
+        "name": "base_url",
+        "label": "Base URL",
+        "type": "text",
+        "required": false,
+        "placeholder": "https://ark.cn-beijing.volces.com/api/plan/v3",
+        "help": "API Base URL（默认使用火山引擎北京区域）"
+      },
+      {
+        "name": "default_size",
+        "label": "默认分辨率",
+        "type": "select",
+        "required": false,
+        "options": ["2K", "3K"],
+        "default": "2K",
+        "help": "生成图片的默认分辨率"
+      },
+      {
+        "name": "timeout",
+        "label": "请求超时（秒）",
+        "type": "number",
+        "required": false,
+        "placeholder": "60",
+        "min": 10,
+        "max": 300,
+        "default": 60,
+        "help": "HTTP 请求超时时间（默认 60 秒）"
+      }
+    ]
+  }
+}
