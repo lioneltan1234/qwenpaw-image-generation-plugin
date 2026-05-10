@@ -4,6 +4,7 @@
 import base64
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_SIZE = "2K"
 DEFAULT_N = 1
+DEFAULT_OUTPUT_DIR = Path.home() / "Pictures" / "QwenPaw_Generated"
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 
 def _get_tool_config() -> dict:
@@ -29,11 +32,13 @@ def _get_tool_config() -> dict:
     """
     try:
         from qwenpaw.plugins.registry import PluginRegistry
+        from qwenpaw.app.agent_context import get_current_agent_id
 
         registry = PluginRegistry()
+        agent_id = get_current_agent_id() or "default"
         tool_config = registry.get_tool_config(
             "generate_image",
-            "",
+            agent_id,
         )
         return tool_config if tool_config else {}
     except Exception:
@@ -132,6 +137,19 @@ async def generate_image(
             ],
         )
 
+    # Security: enforce HTTPS
+    if not base_url.startswith("https://"):
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "Error: Base URL must use HTTPS to protect your API key."
+                    ),
+                ),
+            ],
+        )
+
     model = tool_config.get("model", "").strip()
     if not model:
         return ToolResponse(
@@ -150,7 +168,10 @@ async def generate_image(
     if timeout is None or timeout <= 0:
         timeout = DEFAULT_TIMEOUT
     else:
-        timeout = float(timeout)
+        try:
+            timeout = float(timeout)
+        except (ValueError, TypeError):
+            timeout = DEFAULT_TIMEOUT
 
     # Validate parameters
     valid_sizes = {"2K", "3K"}
@@ -276,8 +297,8 @@ async def generate_image(
             ],
         )
 
-    # Parse response
-    return _parse_response(data, size)
+    # Parse response (pass original prompt for revised_prompt comparison)
+    return _parse_response(data, size, prompt.strip())
 
 
 def _process_reference_images(
@@ -338,6 +359,18 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
     Returns:
         Base64 data URL string, or ToolResponse on error
     """
+    # Security: reject path traversal attempts
+    normalized = os.path.normpath(file_path)
+    if ".." in normalized:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Invalid path traversal detected: {file_path}",
+                ),
+            ],
+        )
+
     path = Path(os.path.expanduser(file_path))
     if not path.exists():
         return ToolResponse(
@@ -345,6 +378,31 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
                 TextBlock(
                     type="text",
                     text=f"Error: File not found: {file_path}",
+                ),
+            ],
+        )
+
+    # Security: enforce file size limit
+    try:
+        file_size = path.stat().st_size
+        if file_size > MAX_FILE_SIZE:
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=(
+                            f"Error: File too large ({file_size / 1024 / 1024:.1f}MB). "
+                            f"Maximum size is {MAX_FILE_SIZE / 1024 / 1024:.0f}MB."
+                        ),
+                    ),
+                ],
+            )
+    except OSError as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Cannot read file metadata: {str(e)}",
                 ),
             ],
         )
@@ -378,6 +436,7 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
             encoded = base64.b64encode(f.read()).decode("utf-8")
         return f"data:{mime_type};base64,{encoded}"
     except Exception as e:
+        logger.exception(f"Failed to read image file {file_path}: {e}")
         return ToolResponse(
             content=[
                 TextBlock(
@@ -388,12 +447,17 @@ def _file_to_base64(file_path: str) -> Union[str, ToolResponse]:
         )
 
 
-def _parse_response(data: dict, requested_size: str) -> ToolResponse:
+def _parse_response(
+    data: dict,
+    requested_size: str,
+    prompt: str = "",
+) -> ToolResponse:
     """Parse API response and build ToolResponse.
 
     Args:
         data: API response JSON
         requested_size: The size that was requested
+        prompt: The original prompt (for revised_prompt comparison)
 
     Returns:
         ToolResponse with image blocks and text
@@ -425,21 +489,22 @@ def _parse_response(data: dict, requested_size: str) -> ToolResponse:
     result_text = f"✅ 成功生成 {image_count} 张图片：\n\n"
     for i, item in enumerate(image_list, 1):
         url = item.get("url", "")
-        b64_json = item.get("b64_json", "")
+        b64_data = item.get("b64_json", "")
         revised_prompt = item.get("revised_prompt", "")
         item_size = item.get("size", requested_size)
 
         if url:
             result_text += f"**第 {i} 张** ({item_size}):\n"
             result_text += f"🔗 {url}\n\n"
-        elif b64_json:
+        elif b64_data:
             # Save base64 as file
-            saved_path = _save_b64_image(b64_json, i)
+            saved_path = _save_b64_image(b64_data, i)
             if saved_path:
                 result_text += f"**第 {i} 张**:\n"
                 result_text += f"💾 {saved_path}\n\n"
 
-        if revised_prompt and revised_prompt != item.get("prompt"):
+        # Only show revised_prompt if it differs from original
+        if revised_prompt and revised_prompt != prompt:
             result_text += f"_优化提示词: {revised_prompt}\n\n"
 
     # Add usage info if available
@@ -453,26 +518,25 @@ def _parse_response(data: dict, requested_size: str) -> ToolResponse:
     return ToolResponse(content=content)
 
 
-def _save_b64_image(b64_json: str, index: int) -> Optional[str]:
+def _save_b64_image(b64_data: str, index: int) -> Optional[str]:
     """Save base64 image data to file.
 
     Args:
-        b64_json: Base64 encoded image JSON
+        b64_data: Base64 encoded image data
         index: Image index for filename
 
     Returns:
         Path to saved file, or None on error
     """
     try:
-        import json
+        # Directly decode - b64_data is a plain base64 string, not JSON
+        image_data = base64.b64decode(b64_data)
 
-        decoded = json.loads(b64_json)
-        image_data = base64.b64decode(decoded)
-
-        output_dir = Path(DEFAULT_MEDIA_DIR)
+        output_dir = DEFAULT_OUTPUT_DIR
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"generated_image_{index}.png"
+        # UUID-based filename to avoid collisions
+        filename = f"generated_image_{uuid.uuid4().hex[:8]}_{index}.png"
         output_path = output_dir / filename
 
         with open(output_path, "wb") as f:
@@ -480,5 +544,5 @@ def _save_b64_image(b64_json: str, index: int) -> Optional[str]:
 
         return str(output_path)
     except Exception as e:
-        logger.error(f"Failed to save base64 image: {e}")
+        logger.exception(f"Failed to save base64 image: {e}")
         return None
