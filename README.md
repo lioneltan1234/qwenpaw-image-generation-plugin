@@ -123,7 +123,7 @@ qwenpaw-image-generation-plugin/
 ## References
 
 - [QwenPaw Plugin System](https://github.com/agentscope-ai/QwenPaw/tree/main/plugins)
-- [OpenAI Image Generation API](https://platform.openai.com/docs/api-reference/images)
+- [OpenAI Image Generation API](https://platform.openai.com/api/docs/guides/image-generation)
 - [Volcano Engine Ark API](https://www.volcengine.com/docs/6492/2172373)
 
 ## License

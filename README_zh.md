@@ -122,7 +122,7 @@ qwenpaw-image-generation-plugin/
 ## 参考
 
 - [QwenPaw 插件系统文档](https://github.com/agentscope-ai/QwenPaw/tree/main/plugins)
-- [OpenAI Image Generation API](https://platform.openai.com/docs/api-reference/images)
+- [OpenAI Image Generation API](https://platform.openai.com/api/docs/guides/image-generation)
 - [火山引擎 Ark API 文档](https://www.volcengine.com/docs/6492/2172373)
 
 ## License
